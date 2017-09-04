@@ -1,0 +1,106 @@
+# Customise this file, documentation can be found here:
+# https://github.com/fastlane/fastlane/tree/master/fastlane/docs
+# All available actions: https://docs.fastlane.tools/actions
+# can also be listed using the `fastlane actions` command
+
+# Change the syntax highlighting to Ruby
+# All lines starting with a # are ignored when running `fastlane`
+
+# If you want to automatically update fastlane if a new version is available:
+# update_fastlane
+
+# This is the minimum version number required.
+# Update this, if you use features of a newer version
+fastlane_version "2.53.1"
+
+default_platform :android
+
+platform :android do
+  before_all do
+    # ENV["SLACK_URL"] = "https://hooks.slack.com/services/..."
+  end
+
+  desc "Runs all the tests"
+  lane :test do
+    gradle(task: "test")
+  end
+
+  lane :bump_version_code do
+    path = '../app/build.gradle'
+    re = /versionCode\s+(\d+)/
+
+    s = File.read(path)
+    s[re, 1] = (ENV["TRAVIS_BUILD_NUMBER"]).to_s
+
+    f = File.new(path, 'w')
+    f.write(s)
+    f.close
+  end
+
+  desc "Submit a new Beta Build to Crashlytics Beta"
+  lane :beta do |values|
+    # Adjust the `build_type` and `flavor` params as needed to build the right APK for your setup
+
+    emails = values[:test_email] ? values[:test_email] : ['thomas@kitsu.io','mikunj@live.com.au','nuck@kitsu.io', 'daniel@rassiner.com', 'josh.madewell@gmail.com'] # You can list more emails here
+    groups = values[:test_email] ? nil : nil # You can define groups on the web and reference them here
+
+    bump_version_code
+    gradle(
+      task: "assembleRelease",
+      # project_dir: "platforms/android/",
+      properties: {
+        'android.useDeprecatedNdk' => true,
+        'android.injected.signing.store.file' => 'app/kitsu-android-key.keystore',
+        'android.injected.signing.store.password' => ENV["KITSU_RELEASE_STORE_PASSWORD"],
+        'android.injected.signing.key.alias'=> ENV["KITSU_RELEASE_KEY_ALIAS"],
+        'android.injected.signing.key.password' => ENV["KITSU_RELEASE_KEY_PASSWORD"]
+      }
+    )
+
+    # supply(track: 'beta')
+
+    crashlytics(
+      api_token: 'b4ccb0473f2023c511cbd8fbd2dcef86b2cf7b00',
+      build_secret: '010015018557534a1a97465380fd280881f586eec24f45bcc511520a031d50d4',
+      emails: emails,
+      groups: groups,
+      debug: true,
+      # there is a bug of crashlytics for notes (https://github.com/fastlane/fastlane/issues/6325)
+      # notes: 'Distributed with fastlane', # Check out the changelog_from_git_commits action
+      notifications: true  # Should this distribution notify your testers via email?
+    )
+
+    # sh "your_script.sh"
+    # You can also use other beta testing services here
+  end
+
+  desc "Deploy a new version to the Google Play"
+  lane :deploy do
+    gradle(task: "assembleRelease")
+    supply
+  end
+
+  # You can define as many lanes as you want
+
+  after_all do |lane|
+    # This block is called, only if the executed lane was successful
+
+    # slack(
+    #   message: "Successfully deployed new App Update."
+    # )
+  end
+
+  error do |lane, exception|
+    # slack(
+    #   message: exception.message,
+    #   success: false
+    # )
+  end
+end
+
+
+# More information about multiple platforms in fastlane: https://github.com/fastlane/fastlane/blob/master/fastlane/docs/Platforms.md
+# All available actions: https://docs.fastlane.tools/actions
+
+# fastlane reports which actions are used. No personal data is recorded.
+# Learn more at https://github.com/fastlane/fastlane#metrics
